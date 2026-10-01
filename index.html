@@ -41,7 +41,8 @@ body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
 button,input,select,textarea{font:inherit;color:inherit}
 .num{font-variant-numeric:tabular-nums}
 .wrap{max-width:520px;margin:0 auto;padding:12px 18px 128px}
-.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:8px 2px 4px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-12px -18px 0;padding:12px 20px 10px;background:var(--bg);transition:box-shadow .2s}
+.top.scrolled{box-shadow:0 1px 0 var(--line),0 6px 14px rgba(0,0,0,.06)}
 .top h1{margin:0;font-size:1.9rem;font-weight:700;letter-spacing:-.02em}
 #sync{font-size:.8rem;color:var(--muted)}
 .periods{display:flex;gap:6px;overflow-x:auto;padding:10px 0 4px;scrollbar-width:none;margin:0 -18px;padding-left:18px;padding-right:18px}
@@ -213,7 +214,7 @@ dialog[open]{animation:up .22s ease-out}
 .top .tl{display:flex;align-items:center;gap:10px}
 .menubtn{width:40px;height:40px;border:0;border-radius:12px;background:var(--chip);font-size:1.4rem;line-height:1;font-weight:700;cursor:pointer;display:grid;place-items:center;padding-bottom:6px}
 .scrim{position:fixed;inset:0;z-index:7;background:rgba(10,20,15,.25)}
-.menu{position:fixed;z-index:8;top:calc(env(safe-area-inset-top,0px) + 62px);left:max(14px, calc(50% - 246px));background:var(--surface);border-radius:16px;padding:6px;
+.menu{position:fixed;z-index:8;top:calc(env(safe-area-inset-top,0px) + 60px);left:max(14px, calc(50% - 246px));background:var(--surface);border-radius:16px;padding:6px;
   box-shadow:0 12px 32px rgba(0,0,0,.22);min-width:230px;animation:pop .14s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.menu{animation:none}}
@@ -565,6 +566,8 @@ function toggleMenu(open){
   if (open) $('menu').querySelector('button').focus();
 }
 $('menuBtn').onclick=()=>toggleMenu($('menu').hidden);
+const topEl=document.querySelector('.top');
+addEventListener('scroll',()=>topEl.classList.toggle('scrolled', scrollY>4),{passive:true});
 $('scrim').onclick=()=>toggleMenu(false);
 document.addEventListener('keydown',e=>{ if (e.key==='Escape' && !$('menu').hidden){ toggleMenu(false); $('menuBtn').focus(); } });
 $('menu').addEventListener('click',e=>{ const b=e.target.closest('[data-go]'); if(!b) return; toggleMenu(false);
