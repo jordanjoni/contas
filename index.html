@@ -175,7 +175,10 @@ dialog[open]{animation:up .22s ease-out}
     <summary>Cópia de segurança</summary>
     <div class="inner">
       <p>Os dados existem só neste iPhone. Faça uma cópia de vez em quando e guarde-a numa nota ou num email. Para recuperar, cole a cópia na caixa e toque em Restaurar; os movimentos existentes mantêm-se.</p>
-      <div class="btnrow"><button class="ghost" id="bkCopy">Copiar dados</button></div>
+      <div class="btnrow"><button class="ghost" id="bkCopy">Copiar dados</button>
+        <button class="ghost" id="bkFileBtn">Importar ficheiro</button>
+        <input type="file" id="bkFile" accept=".csv,.txt,.json,text/csv,text/plain,application/json" hidden></div>
+      <p style="font-size:.85rem;color:var(--muted);margin:8px 0">Importar ficheiro aceita uma cópia de segurança desta app ou um CSV exportado do Moneyboard.</p>
       <textarea id="bkText" placeholder="Cole aqui uma cópia de segurança" aria-label="Cópia de segurança"></textarea>
       <div class="btnrow"><button class="ghost" id="bkRestore">Restaurar</button></div>
       <p id="bkMsg" style="margin:8px 0 0;font-size:.85rem;color:var(--muted)"></p>
@@ -437,21 +440,74 @@ $('bkCopy').onclick=async()=>{
   try { await navigator.clipboard.writeText(data); $('bkMsg').textContent='Dados copiados. Cole-os numa nota ou email para os guardar.'; }
   catch(e){ $('bkText').value=data; $('bkText').select(); $('bkMsg').textContent='Não foi possível copiar automaticamente. Os dados estão na caixa: selecione e copie.'; }
 };
-$('bkRestore').onclick=()=>{
-  let n=0; const touched=new Set();
-  try{
-    const d = JSON.parse($('bkText').value);
-    for (const it of (d.items||[])){
-      if (!it || !it.id || !CAT[it.cat] || !(it.amount>0) || !/^\d{4}-\d{2}-\d{2}$/.test(it.date)) continue;
-      const cur = items[it.id];
-      if (!cur || (it.updatedAt||0)>(cur.updatedAt||0)){ items[it.id]=it; n++; touched.add(monthKey(it.date)); }
-    }
-    for (const r of (d.rules||[])){ if (r && r.id && CAT[r.cat] && (!rules[r.id] || (r.updatedAt||0)>(rules[r.id].updatedAt||0))){ rules[r.id]=r; n++; } }
-    saveRules(); queuePush('regras');
-  }catch(e){ $('bkMsg').textContent='A cópia colada não é válida. Confirme que colou o texto completo.'; return; }
-  saveLocal(); generate(); render(); touched.forEach(queuePush);
-  $('bkMsg').textContent = n ? `Restaurados ${n} movimentos.` : 'Nada de novo para restaurar.';
-};
+function mergeImport(list, rulesList){
+  let added=0, existing=0, bad=0; const touched=new Set();
+  for (const it of list){
+    if (!it || !it.id || !CAT[it.cat] || !(it.amount>0) || !/^\d{4}-\d{2}-\d{2}$/.test(it.date)){ bad++; continue; }
+    const cur = items[it.id];
+    if (!cur){ items[it.id]=it; added++; touched.add(monthKey(it.date)); }
+    else if ((it.updatedAt||0)>(cur.updatedAt||0)){ items[it.id]=it; added++; touched.add(monthKey(it.date)); }
+    else existing++;
+  }
+  for (const r of (rulesList||[])){ if (r && r.id && CAT[r.cat] && (!rules[r.id] || (r.updatedAt||0)>(rules[r.id].updatedAt||0))){ rules[r.id]=r; } }
+  saveRules(); saveLocal(); generate(); render(); touched.forEach(queuePush);
+  const parts=[];
+  if (added) parts.push(`Importados ${added} movimentos.`);
+  if (existing) parts.push(`${existing} já estavam na app e foram mantidos.`);
+  if (bad) parts.push(`${bad} linhas não puderam ser lidas.`);
+  if (!parts.length) parts.push('O ficheiro não tinha movimentos.');
+  if (added){ period='12m'; try{localStorage.setItem(LSP,period)}catch(e){} render(); parts.push('A mostrar o último ano.'); }
+  $('bkMsg').textContent = parts.join(' ');
+}
+const MB = {'compras':'compras','supermercado':'compras','restaurantes':'restaurantes','restaurante':'restaurantes','café':'cafe','cafe':'cafe',
+  'espetáculo':'espetaculos','espetáculos':'espetaculos','bebidas':'bebidas','transporte público':'transportes','transportes':'transportes','transporte':'transportes',
+  'combustível':'combustivel','combustivel':'combustivel','desporto':'desporto','jogos':'jogos',
+  'salário':'salario','salario':'salario','investimentos':'investimentos','subsídios':'subsidio','reembolsos':'reembolso'};
+function csvRows(text){
+  const rows=[]; let row=[], f='', q=false;
+  for (let k=0;k<text.length;k++){ const ch=text[k];
+    if (q){ if (ch==='"'){ if (text[k+1]==='"'){ f+='"'; k++; } else q=false; } else f+=ch; }
+    else if (ch==='"') q=true; else if (ch===','){ row.push(f); f=''; }
+    else if (ch==='\n'||ch==='\r'){ if (ch==='\r'&&text[k+1]==='\n') k++; row.push(f); rows.push(row); row=[]; f=''; }
+    else f+=ch; }
+  if (f||row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+function parseMoneyboard(text){
+  const rows = csvRows(text.replace(/^\uFEFF/,''));
+  const h = rows.findIndex(r=>r[0]==='Data' && r[1]==='Hora'); if (h<0) return null;
+  const H = rows[h], col = n => H.indexOf(n);
+  const cD=col('Data'),cH=col('Hora'),cC=col('Categoria'),cN=col('Notas'),cNm=col('Nome'),cO=col('Despesa'),cI=col('Receita');
+  const num = v => { v=(v||'').replace(/[€\s\u00a0]/g,''); if(!v) return 0; v = v.includes(',') ? v.replace(/\./g,'').replace(',','.') : v; return Math.abs(parseFloat(v))||0; };
+  const out=[]; let n=0;
+  for (const r of rows.slice(h+1)){
+    if (!r[cD] || !/^\d{2}\/\d{2}\/\d{2,4}$/.test(r[cD])) continue;
+    let [d,m,y]=r[cD].split('/'); if (y.length===2) y='20'+y;
+    const date=`${y}-${m}-${d}`, hm=(r[cH]||'00:00').split(':');
+    const inc=num(r[cI]), exp=num(r[cO]); const type = inc>0?'in':'out';
+    const key=(r[cC]||'').trim().toLowerCase();
+    let cat = MB[key]; if (!cat || CAT[cat].type!==type) cat = type==='in'?'outros_in':'outros';
+    const note = [(r[cNm]||'').trim(), (r[cN]||'').trim()].filter(Boolean).join(' · ') || (CAT[cat].name.startsWith('Outros') && r[cC] ? r[cC] : '');
+    const ts = new Date(+y, +m-1, +d, +hm[0]||0, +hm[1]||0).getTime();
+    out.push({id:`mb${y}${m}${d}${pad(+hm[0]||0)}${pad(+hm[1]||0)}${pad(n)}`, type, cat, amount:Math.round((type==='in'?inc:exp)*100)/100, date, note, createdAt:ts, updatedAt:ts});
+    n++;
+  }
+  return out;
+}
+function importText(text){
+  text=(text||'').trim();
+  if (!text){ $('bkMsg').textContent='Não há nada para importar.'; return; }
+  if (text[0]==='{'){
+    let d; try{ d=JSON.parse(text.replace(/[\u201C\u201D]/g,'"')); }catch(e){ $('bkMsg').textContent='A cópia colada não é válida. Confirme que colou o texto completo.'; return; }
+    return mergeImport(d.items||[], d.rules);
+  }
+  const mb = parseMoneyboard(text);
+  if (mb) return mergeImport(mb);
+  $('bkMsg').textContent='Não reconheci este ficheiro. Use uma cópia de segurança desta app ou um CSV do Moneyboard.';
+}
+$('bkRestore').onclick=()=>importText($('bkText').value);
+$('bkFileBtn').onclick=()=>$('bkFile').click();
+$('bkFile').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; importText(await f.text()); e.target.value=''; });
 
 /* ---------- storage: this device only ---------- */
 function queuePush(){}
