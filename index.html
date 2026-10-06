@@ -252,6 +252,16 @@ dialog[open]{animation:up .22s ease-out}
 .bin2 input{border:0!important;background:none!important;padding:9px 0!important;width:100%;min-width:0;font-size:16px;outline:none}
 #goalScreen .datebox .dateshow,#goalsScreen .datebox .dateshow{background:var(--bg)}
 .gh-big{font-size:1.9rem;font-weight:700;letter-spacing:-.03em;margin:4px 0 0}
+.ynav{display:flex;align-items:center;justify-content:space-between;margin:4px 0 12px}
+.ynav b{font-size:1.2rem;font-weight:600}
+.ynav button{width:40px;height:40px;border:0;border-radius:50%;background:var(--chip);font-size:1.3rem;cursor:pointer}
+.ynav button:disabled{opacity:.35;cursor:default}
+.mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mgrid button{position:relative;border:0;background:var(--chip);border-radius:12px;padding:14px 4px;font-size:1rem;font-weight:500;cursor:pointer}
+.mgrid button[aria-pressed="true"]{background:var(--brand);color:var(--brand-ink)}
+.mgrid button:disabled{opacity:.35;cursor:default}
+.mgrid button.has::after{content:"";position:absolute;bottom:6px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:var(--income)}
+.mgrid button[aria-pressed="true"].has::after{background:var(--brand-ink)}
 .del{width:100%;border:0;background:none;color:var(--expense);padding:12px;margin-top:6px;font-weight:500;cursor:pointer}
 </style>
 </head>
@@ -264,6 +274,7 @@ dialog[open]{animation:up .22s ease-out}
     <button role="tab" data-p="30d">Últimos 30 dias</button>
     <button role="tab" data-p="6m">Últimos 6 meses</button>
     <button role="tab" data-p="12m">Último ano</button>
+    <button role="tab" data-p="month" id="pMonth">📅 Escolher mês</button>
   </nav>
   <div class="banner" id="bkBanner" hidden>
     <p id="bkBannerMsg"></p>
@@ -457,6 +468,15 @@ dialog[open]{animation:up .22s ease-out}
   </div>
 </section>
 
+<dialog id="mDlg" aria-labelledby="mTitle">
+  <div class="sheet">
+    <header><h2 id="mTitle">Escolher mês</h2><button class="x" id="mClose" aria-label="Fechar">✕</button></header>
+    <div class="ynav"><button id="yPrev" aria-label="Ano anterior">‹</button><b id="yLbl" class="num"></b><button id="yNext" aria-label="Ano seguinte">›</button></div>
+    <div class="mgrid" id="mGrid"></div>
+    <p class="hint" style="margin:12px 2px 0">Os meses com um ponto têm movimentos registados.</p>
+  </div>
+</dialog>
+
 <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastUndo">Anular</button></div>
 
 <dialog id="sheet" aria-labelledby="sheetTitle">
@@ -556,6 +576,11 @@ function periodStart(p){
   if (p==='6m'){ d.setMonth(d.getMonth()-6); d.setDate(d.getDate()+1); return iso(d); }
   d.setFullYear(d.getFullYear()-1); d.setDate(d.getDate()+1); return iso(d);
 }
+function periodRange(p){
+  if (p && p.startsWith('m:')){ const ym=p.slice(2), [y,m]=ym.split('-').map(Number); return [ym+'-01', iso(new Date(y,m,0))]; }
+  return [periodStart(p), today()];
+}
+const monthTitle = ym => { const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleDateString('pt-PT',{month:'long'}); };
 const LABEL = {'1d':'Saldo de hoje','7d':'Saldo nos últimos 7 dias','30d':'Saldo nos últimos 30 dias','6m':'Saldo nos últimos 6 meses','12m':'Saldo no último ano'};
 
 /* ---------- monthly automatic entries ---------- */
@@ -592,8 +617,11 @@ function render(){
   if (!$('rulesScreen').hidden) renderRules(); if (!$('budScreen').hidden) renderBudgets(); if (!$('cmpScreen').hidden) renderCompare();
   if (!$('evoScreen').hidden) renderEvolution(); if (!$('fcScreen').hidden) renderForecast();
   if (!$('goalsScreen').hidden) renderGoals(); if (!$('goalScreen').hidden) renderGoal();
-  document.querySelectorAll('.periods button').forEach(b=>b.setAttribute('aria-selected', b.dataset.p===period));
-  const start = periodStart(period), end = today();
+  const isMonth = period.startsWith('m:');
+  document.querySelectorAll('.periods button').forEach(b=>b.setAttribute('aria-selected', b.dataset.p==='month' ? isMonth : b.dataset.p===period));
+  if (isMonth){ const ym=period.slice(2); $('pMonth').textContent='📅 '+monthTitle(ym).replace(/^./,c=>c.toUpperCase())+(ym.slice(0,4)!==today().slice(0,4)?' '+ym.slice(0,4):''); }
+  else $('pMonth').textContent='📅 Escolher mês';
+  const [start, end] = periodRange(period);
   const list = Object.values(items).filter(i=>!i.deleted && i.date>=start && i.date<=end)
     .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:(b.createdAt||0)-(a.createdAt||0));
   let tin=0,tout=0; const byCat={};
@@ -603,7 +631,7 @@ function render(){
   const saldo = tin-tout-saved;
   $('savedLine').hidden = !saved;
   if (saved) $('savedLine').innerHTML = saved>0 ? `🐷 Pôs de lado <b class="num">${fmt(saved)}</b> para objetivos, já descontados do saldo.` : `🐷 Retirou <b class="num">${fmt(-saved)}</b> dos objetivos, já somados ao saldo.`;
-  $('saldoLbl').textContent = LABEL[period];
+  $('saldoLbl').textContent = isMonth ? `Saldo de ${monthTitle(period.slice(2))} de ${period.slice(2,6)}` : LABEL[period];
   $('saldo').textContent = (saldo>0?'+':'')+fmt(saldo);
   $('tIn').textContent = fmt(tin); $('tOut').textContent = fmt(tout);
 
@@ -943,7 +971,7 @@ const sortMov = (a,b)=> a.date<b.date?1:a.date>b.date?-1:(b.createdAt||0)-(a.cre
 /* ---------- all movements screen ---------- */
 function openAll(){
   document.body.style.overflow='hidden';
-  setDate('fFrom',periodStart(period)); setDate('fTo',today()); fillCatFilter();
+  { const [a,b]=periodRange(period); setDate('fFrom',a); setDate('fTo', b>today()?today():b); } fillCatFilter();
   $('all').hidden = false; document.body.style.overflow='hidden'; $('all').scrollTop=0;
   renderAll(); $('allBack').focus();
 }
@@ -1138,8 +1166,32 @@ $('quick').addEventListener('click',e=>{ const b=e.target.closest('button'); if(
   if (b.dataset.q==='year'){ setDate('fFrom',iso(new Date(y,0,1))); setDate('fTo',today()); }
   if (b.dataset.q==='all'){ const ds=Object.values(items).filter(i=>!i.deleted).map(i=>i.date).sort(); setDate('fFrom',ds[0]||today()); setDate('fTo',today()); }
   renderAll(); });
+function setPeriod(p){ period=p; try{localStorage.setItem(LSP,period)}catch(err){} render(); }
 document.querySelector('.periods').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
-  period=b.dataset.p; try{localStorage.setItem(LSP,period)}catch(err){} render(); });
+  if (b.dataset.p==='month') return openMonthPicker();
+  setPeriod(b.dataset.p); });
+let pickYear = new Date().getFullYear();
+function openMonthPicker(){
+  pickYear = period.startsWith('m:') ? +period.slice(2,6) : new Date().getFullYear();
+  renderMonthGrid(); $('mDlg').showModal ? $('mDlg').showModal() : $('mDlg').setAttribute('open','');
+}
+function renderMonthGrid(){
+  const now=new Date(), cy=now.getFullYear(), cm=now.getMonth()+1;
+  const has=new Set(alive().map(i=>i.date.slice(0,7)));
+  const years=[...has].map(x=>+x.slice(0,4));
+  const minY=Math.min(cy, ...years);
+  $('yLbl').textContent=pickYear; $('yPrev').disabled = pickYear<=minY; $('yNext').disabled = pickYear>=cy;
+  const sel = period.startsWith('m:') ? period.slice(2) : '';
+  let h=''; for (let m=1;m<=12;m++){ const ym=pickYear+'-'+pad(m), fut = pickYear>cy || (pickYear===cy && m>cm);
+    const lbl=new Date(pickYear,m-1,1).toLocaleDateString('pt-PT',{month:'short'}).replace('.','');
+    h+=`<button data-ym="${ym}" class="${has.has(ym)?'has':''}" aria-pressed="${ym===sel}" ${fut?'disabled':''} aria-label="${new Date(pickYear,m-1,1).toLocaleDateString('pt-PT',{month:'long',year:'numeric'})}">${lbl}</button>`; }
+  $('mGrid').innerHTML=h;
+}
+function closeMonthPicker(){ $('mDlg').close ? $('mDlg').close() : $('mDlg').removeAttribute('open'); }
+$('mGrid').addEventListener('click',e=>{ const b=e.target.closest('[data-ym]'); if(!b || b.disabled) return; closeMonthPicker(); setPeriod('m:'+b.dataset.ym); });
+$('yPrev').onclick=()=>{ pickYear--; renderMonthGrid(); }; $('yNext').onclick=()=>{ pickYear++; renderMonthGrid(); };
+$('mClose').onclick=closeMonthPicker;
+$('mDlg').addEventListener('click',e=>{ if (e.target===$('mDlg')) closeMonthPicker(); });
 
 /* ---------- backup ---------- */
 $('bkCopy').onclick=async()=>{
