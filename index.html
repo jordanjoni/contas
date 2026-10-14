@@ -262,6 +262,10 @@ dialog[open]{animation:up .22s ease-out}
 .mgrid button:disabled{opacity:.35;cursor:default}
 .mgrid button.has::after{content:"";position:absolute;bottom:6px;left:50%;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:var(--income)}
 .mgrid button[aria-pressed="true"].has::after{background:var(--brand-ink)}
+.freq{margin:-6px 0 14px}
+.freq select{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px;font-size:16px;min-height:44px;-webkit-appearance:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px;background-repeat:no-repeat}
 .del{width:100%;border:0;background:none;color:var(--expense);padding:12px;margin-top:6px;font-weight:500;cursor:pointer}
 </style>
 </head>
@@ -352,9 +356,9 @@ dialog[open]{animation:up .22s ease-out}
 
 <section class="screen" id="rulesScreen" hidden aria-labelledby="rulesTitle">
   <div class="topbar"><div style="max-width:484px;margin:0 auto">
-    <div class="ttl"><button class="back" data-close="rulesScreen">‹ Voltar</button><h2 id="rulesTitle">Mensais automáticos</h2></div>
+    <div class="ttl"><button class="back" data-close="rulesScreen">‹ Voltar</button><h2 id="rulesTitle">Movimentos automáticos</h2></div>
   </div></div>
-  <div class="body"><div class="card rules"><div id="rules"></div></div><p class="hint" style="margin:10px 4px 0">Toque num deles para mudar o valor ou deixar de o repetir. Para criar um novo, registe a receita ou despesa e marque "Repetir todos os meses".</p></div>
+  <div class="body"><div class="card rules"><div id="rules"></div></div><p class="hint" style="margin:10px 4px 0">Toque num deles para mudar o valor ou deixar de o repetir. Para criar um novo, registe a receita ou despesa, marque "Repetir automaticamente" e escolha a frequência.</p></div>
 </section>
 
 <section class="screen" id="budScreen" hidden aria-labelledby="budTitle">
@@ -380,7 +384,7 @@ dialog[open]{animation:up .22s ease-out}
   <div class="dgroup">Planear</div>
   <button data-go="bud"><span class="di" aria-hidden="true">🎯</span><span class="dt">Orçamentos<small id="mBud"></small></span></button>
   <button data-go="goals"><span class="di" aria-hidden="true">🐷</span><span class="dt">Objetivos de poupança<small id="mGoals"></small></span></button>
-  <button data-go="rules"><span class="di" aria-hidden="true">🔁</span><span class="dt">Mensais automáticos<small id="mRules"></small></span></button>
+  <button data-go="rules"><span class="di" aria-hidden="true">🔁</span><span class="dt">Movimentos automáticos<small id="mRules"></small></span></button>
   <div class="dgroup">Definições</div>
   <button data-go="cat"><span class="di" aria-hidden="true">🏷️</span><span class="dt">Categorias</span></button>
   <button data-go="bk"><span class="di" aria-hidden="true">💾</span><span class="dt">Cópia de segurança<small id="mBk"></small></span></button>
@@ -501,7 +505,14 @@ dialog[open]{animation:up .22s ease-out}
       <label id="dayWrap" hidden><span class="lab">Dia do mês</span><input type="number" id="fDay" min="1" max="31" inputmode="numeric"></label>
       <label><span class="lab">Nota (opcional)</span><input id="fNote" maxlength="80" placeholder="Ex.: jantar com amigos"></label>
     </div>
-    <label class="repeat" id="repWrap"><input type="checkbox" id="fRep"><span>Repetir todos os meses<small id="repHint"></small></span></label>
+    <label class="repeat" id="repWrap"><input type="checkbox" id="fRep"><span>Repetir automaticamente<small id="repHint"></small></span></label>
+    <div class="freq" id="freqWrap" hidden><span class="lab">Frequência</span>
+      <select id="fFreq" aria-label="Frequência">
+        <option value="m1">Todos os meses</option>
+        <option value="w1">Todas as semanas</option>
+        <option value="w2">De 2 em 2 semanas</option>
+        <option value="w4">De 4 em 4 semanas</option>
+      </select></div>
     <p class="info" id="fInfo" hidden></p>
     <div class="err" id="fErr" role="alert"></div>
     <button class="save" id="fSave">Guardar despesa</button>
@@ -587,9 +598,26 @@ const LABEL = {'1d':'Saldo de hoje','7d':'Saldo nos últimos 7 dias','30d':'Sald
 const daysIn = (y,m) => new Date(y,m,0).getDate();
 const occDate = (ym,day) => { const [y,m]=ym.split('-').map(Number); return ym+'-'+pad(Math.min(day,daysIn(y,m))); };
 const nextYm = ym => { let [y,m]=ym.split('-').map(Number); m++; if (m>12){m=1;y++;} return y+'-'+pad(m); };
+const WD=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+const dOf = x => { const [y,m,d]=x.split('-').map(Number); return new Date(y,m-1,d); };
+const addDays = (x,n) => { const d=dOf(x); d.setDate(d.getDate()+n); return iso(d); };
+const isWeekly = r => r.freq==='week';
+const ruleOccId = (r,date) => isWeekly(r) ? r.id+'-'+date.replace(/-/g,'') : r.id+'-'+date.slice(0,7).replace('-','');
+function ruleLabel(r){
+  if (!isWeekly(r)) return `Todos os meses, no dia ${r.day}`;
+  const wd=WD[dOf(r.anchor).getDay()], art = wd.endsWith('feira')?'à':'ao';
+  return (r.interval===1?'Todas as semanas':`De ${r.interval} em ${r.interval} semanas`)+`, ${art} ${wd}`;
+}
+function weeklyDates(r, until){ const out=[]; let d=r.anchor, g=0; while (d<=until && g++<800){ out.push(d); d=addDays(d,7*r.interval); } return out; }
 function generate(){
   const now = today(), cur = now.slice(0,7); const touched = new Set();
   for (const r of Object.values(rules)){
+    if (isWeekly(r)){
+      const lastD = r.endDate && r.endDate<now ? r.endDate : now;
+      for (const date of weeklyDates(r, lastD)){ const id=ruleOccId(r,date);
+        if (!items[id]){ items[id]={id, type:r.type, cat:r.cat, amount:r.amount, date, note:r.note||'', rule:r.id, createdAt:Date.now(), updatedAt:1}; touched.add(monthKey(date)); } }
+      continue;
+    }
     const last = r.endMonth && r.endMonth<cur ? r.endMonth : cur;
     let ym = r.startMonth, guard = 0;
     while (ym<=last && guard++<60){
@@ -604,11 +632,11 @@ function generate(){
   if (touched.size){ saveLocal(); touched.forEach(queuePush); }
 }
 function renderRules(){
-  const act = Object.values(rules).filter(r=>!r.endMonth).sort((a,b)=>a.day-b.day);
+  const act = Object.values(rules).filter(r=>!r.endMonth).sort((a,b)=>(isWeekly(a)-isWeekly(b))||((a.day||0)-(b.day||0)));
   const el = $('rules');
-  if (!act.length){ el.innerHTML = '<p class="empty">Ao registar o salário (ou uma renda, o ginásio…), marque "Repetir todos os meses" e passa a ser lançado automaticamente.</p>'; return; }
+  if (!act.length){ el.innerHTML = '<p class="empty">Ao registar o salário (ou uma renda, o ginásio…), marque "Repetir automaticamente" e escolha a frequência.</p>'; return; }
   el.innerHTML = '<div class="rows">'+act.map(r=>{ const c=CAT[r.cat]||CAT.outros;
-    return `<button class="row" data-rule="${r.id}"><span class="ic" aria-hidden="true">${c.emoji}</span><span><span class="t">${esc(r.note||c.name)}</span><span class="s">Todos os meses, no dia ${r.day}</span></span><span class="a num ${r.type==='in'?'in':''}">${r.type==='in'?'+':'−'}${fmt(r.amount)}</span></button>`; }).join('')+'</div>';
+    return `<button class="row" data-rule="${r.id}"><span class="ic" aria-hidden="true">${c.emoji}</span><span><span class="t">${esc(r.note||c.name)}</span><span class="s">${ruleLabel(r)}</span></span><span class="a num ${r.type==='in'?'in':''}">${r.type==='in'?'+':'−'}${fmt(r.amount)}</span></button>`; }).join('')+'</div>';
 }
 
 /* ---------- render ---------- */
@@ -923,6 +951,11 @@ function renderForecast(){
   // automatic monthly entries still to come this month
   let pIn=0,pOut=0; const pend=[];
   for (const r of Object.values(rules)){
+    if (isWeekly(r)){
+      if (r.endDate) continue;
+      for (const d of weeklyDates(r, me)) if (d>t && !items[ruleOccId(r,d)]){ if (r.type==='in') pIn+=r.amount; else pOut+=r.amount; if (!pend.includes(r)) pend.push(r); }
+      continue;
+    }
     if (r.startMonth>cur || (r.endMonth && r.endMonth<cur)) continue;
     const d=occDate(cur, r.day), id=r.id+'-'+cur.replace('-','');
     if (d>t && !items[id]){ if (r.type==='in') pIn+=r.amount; else pOut+=r.amount; pend.push(r); }
@@ -943,7 +976,7 @@ function renderForecast(){
     <div class="fc-line"><span>Saldo do mês até hoje</span><b class="num">${(inc-out-sv>0?'+':'')+fmt(inc-out-sv)}</b></div>`;
   if (pIn) h+=`<div class="fc-line"><span>Ainda por entrar (${pend.filter(r=>r.type==='in').map(r=>esc(r.note||CAT[r.cat].name)).join(', ')})</span><b class="num" style="color:var(--income)">+${fmt(pIn)}</b></div>`;
   if (pOut) h+=`<div class="fc-line"><span>Ainda por sair (${pend.filter(r=>r.type==='out').map(r=>esc(r.note||CAT[r.cat].name)).join(', ')})</span><b class="num">−${fmt(pOut)}</b></div>`;
-  if (rem) h+=`<div class="fc-line"><span>Gastos previstos nos ${rem} dias que faltam (${fmt(rate)}/dia)</span><b class="num">−${fmt(est)}</b></div>`;
+  if (rem && est>0.004) h+=`<div class="fc-line"><span>Gastos previstos nos ${rem} dias que faltam (${fmt(rate)}/dia)</span><b class="num">−${fmt(est)}</b></div>`;
   if (need>0) h+=`<p class="fc-note">🐷 Para cumprir os prazos dos objetivos, convém pôr de lado cerca de <b class="num">${fmt(need)}</b> por mês${end>0? (end>=need?'. A previsão permite-o.':'. A previsão ainda não chega para isso.'):'.'}</p>`;
   if (span<14) h+=`<p class="fc-note">A estimativa fica mais fiável depois de duas semanas de registos.</p>`;
   $('fc').innerHTML=h;
@@ -1026,12 +1059,14 @@ function openSheet(type, item, rule){
   editing = item||null; editingRule = rule||null;
   const src = item||rule;
   fCat = src?src.cat:null;
-  $('dateWrap').hidden = !!rule; $('dayWrap').hidden = !rule;
-  $('repWrap').hidden = !!src; $('fRep').checked = false; repHint();
+  $('dateWrap').hidden = !!rule; $('dayWrap').hidden = !rule || isWeekly(rule);
+  $('repWrap').hidden = !!src; $('fRep').checked = false; $('freqWrap').hidden = true; $('fFreq').value='m1'; repHint();
   $('fStop').hidden = !rule;
   const info = $('fInfo');
-  if (rule){ info.hidden=false; info.textContent='As alterações aplicam-se a partir do próximo lançamento. Os meses já registados mantêm-se.'; }
-  else if (item && item.rule){ info.hidden=false; info.textContent='Este movimento foi lançado automaticamente. Alterar ou apagar aqui só afeta este mês.'; }
+  if (rule){ info.hidden=false; info.textContent = isWeekly(rule)
+      ? `Repete-se: ${ruleLabel(rule).toLowerCase()}. As alterações aplicam-se a partir do próximo lançamento e os já registados mantêm-se. Para mudar a frequência, deixe de repetir e crie um novo.`
+      : 'As alterações aplicam-se a partir do próximo lançamento. Os meses já registados mantêm-se.'; }
+  else if (item && item.rule){ info.hidden=false; info.textContent='Este movimento foi lançado automaticamente. Alterar ou apagar aqui só afeta este lançamento.'; }
   else info.hidden=true;
   if (rule){ $('fDay').value = rule.day; }
   if (rule){ setType(rule.type, true); $('fVal').value = rule.amount.toFixed(2).replace('.',','); $('fNote').value = rule.note||''; $('fErr').textContent=''; $('fDel').hidden=true;
@@ -1061,9 +1096,10 @@ $('fSave').onclick=()=>{
   if (!raw || !isFinite(v) || v<=0){ $('fErr').textContent='Indique um valor maior que zero, por exemplo 12,50.'; return; }
   if (!fCat){ $('fErr').textContent='Escolha uma categoria.'; return; }
   if (editingRule){
-    const day = parseInt($('fDay').value,10);
-    if (!(day>=1 && day<=31)){ $('fErr').textContent='Indique um dia do mês entre 1 e 31.'; return; }
-    rules[editingRule.id] = {...editingRule, type:fType, cat:fCat, amount:v, day, note:$('fNote').value.trim(), updatedAt:Date.now()};
+    const upd = {...editingRule, type:fType, cat:fCat, amount:v, note:$('fNote').value.trim(), updatedAt:Date.now()};
+    if (!isWeekly(editingRule)){ const day = parseInt($('fDay').value,10);
+      if (!(day>=1 && day<=31)){ $('fErr').textContent='Indique um dia do mês entre 1 e 31.'; return; } upd.day=day; }
+    rules[editingRule.id] = upd;
     saveRules(); queuePush('regras'); render(); closeSheet(); return;
   }
   const date = $('fDate').value || today();
@@ -1072,10 +1108,12 @@ $('fSave').onclick=()=>{
   let rid = null;
   if (!prev && $('fRep').checked){
     rid = 'r'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+    const fq=$('fFreq').value;
     rules[rid] = {id:rid, type:fType, cat:fCat, amount:v, day:Number(date.slice(8)), note:$('fNote').value.trim(), startMonth:date.slice(0,7), updatedAt:now};
+    if (fq[0]==='w'){ rules[rid].freq='week'; rules[rid].interval=+fq.slice(1); rules[rid].anchor=date; }
     saveRules(); queuePush('regras');
   }
-  const it = {id: prev?prev.id:(rid?rid+'-'+date.slice(0,7).replace('-',''):newId()), rule: prev?prev.rule:rid, type:fType, cat:fCat, amount:v, date, note:$('fNote').value.trim(), createdAt: prev?prev.createdAt:now, updatedAt:now};
+  const it = {id: prev?prev.id:(rid?ruleOccId(rules[rid],date):newId()), rule: prev?prev.rule:rid, type:fType, cat:fCat, amount:v, date, note:$('fNote').value.trim(), createdAt: prev?prev.createdAt:now, updatedAt:now};
   if (!it.rule) delete it.rule;
   items[it.id]=it; saveLocal(); if (rid) generate(); render(); closeSheet();
   queuePush(monthKey(date)); if (prev && monthKey(prev.date)!==monthKey(date)) queuePush(monthKey(prev.date));
@@ -1143,14 +1181,22 @@ function toast(msg, fn){
 }
 $('toastUndo').onclick=()=>{ if (undoFn) undoFn(); undoFn=null; $('toast').hidden=true; };
 
-function repHint(){ const d=$('fDate').value; $('repHint').textContent = d ? 'Lançado automaticamente no dia '+Number(d.slice(8))+' de cada mês' : ''; }
+function repHint(){
+  const d=$('fDate').value||today(), fq=$('fFreq').value;
+  if (!$('fRep').checked){ $('repHint').textContent='Para salário, renda, ginásio e outros movimentos regulares'; return; }
+  if (fq==='m1'){ $('repHint').textContent='Lançado no dia '+Number(d.slice(8))+' de cada mês'; return; }
+  const n=+fq.slice(1), wd=WD[dOf(d).getDay()], art=wd.endsWith('feira')?'à':'ao';
+  $('repHint').textContent=`Lançado ${art} ${wd}, ${n===1?'todas as semanas':`de ${n} em ${n} semanas`}, a partir de ${d.slice(8)}/${d.slice(5,7)}`;
+}
 $('fDate').addEventListener('change',repHint);
+$('fRep').addEventListener('change',()=>{ $('freqWrap').hidden=!$('fRep').checked; repHint(); });
+$('fFreq').addEventListener('change',repHint);
 $('fStop').onclick=()=>{
   if (!editingRule || !armed($('fStop'),'Toque outra vez para deixar de repetir')) return;
   const before = editingRule;
-  rules[before.id] = {...before, endMonth: today().slice(0,7), updatedAt:Date.now()};
+  rules[before.id] = {...before, endMonth: today().slice(0,7), endDate: today(), updatedAt:Date.now()};
   saveRules(); queuePush('regras'); render(); closeSheet();
-  toast('Deixou de repetir', ()=>{ const r={...before, updatedAt:Date.now()}; delete r.endMonth; rules[r.id]=r; saveRules(); render(); });
+  toast('Deixou de repetir', ()=>{ const r={...before, updatedAt:Date.now()}; delete r.endMonth; delete r.endDate; rules[r.id]=r; saveRules(); render(); });
 };
 $('rules').addEventListener('click',e=>{ const b=e.target.closest('.row'); if(b && rules[b.dataset.rule]) openSheet(null, null, rules[b.dataset.rule]); });
 document.addEventListener('visibilitychange',()=>{ if (!document.hidden){ generate(); render(); } });
